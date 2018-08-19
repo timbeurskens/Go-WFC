@@ -19,6 +19,7 @@ import (
 	"timbeurskens/WaveFunctionCollapse"
 	"timbeurskens/progress"
 	"time"
+	"timbeurskens/FileIntercept"
 )
 
 func init() {
@@ -40,8 +41,8 @@ type Sample struct {
 }
 
 var (
-	file = flag.String("in", "samples.json", "json array of samples")
-	reps = flag.Int("tries", 10, "The number of times to try and find a solution")
+	file  = flag.String("in", "samples.json", "json array of samples")
+	reps  = flag.Int("tries", 10, "The number of times to try and find a solution")
 	limit = flag.Int("limit", 0, "Limit the number of iterations, 0 for infinity")
 )
 
@@ -73,17 +74,22 @@ func main() {
 	var wg sync.WaitGroup
 	n := len(sampleList)
 	wg.Add(n)
+
+	ic, _ := FileIntercept.NewIntercept(&os.Stdout)
+	progress.Default.Writer = ic.Original
 	progress.Total(float64(n))
 	progress.Start()
 	for _, sample := range sampleList {
 		sample.dir = dir
 		go func(s Sample) {
-			err := ExecuteSample(s)
+			err, out := ExecuteSample(s)
 			progress.Increment(1)
 
 			//catch error to prevent breaking the goroutine
 			if err != nil {
 				fmt.Println(s.Name, err)
+			} else {
+				fmt.Println(s.Name, "->", out)
 			}
 			wg.Done()
 		}(sample)
@@ -91,9 +97,13 @@ func main() {
 	wg.Wait()
 	progress.Stop()
 	progress.Join()
+
+	ic.Restore()
+	fmt.Println()
+	ic.Flush()
 }
 
-func ExecuteSample(sample Sample) error {
+func ExecuteSample(sample Sample) (error, string) {
 	var model WaveFunctionCollapse.WFCModel
 	var err error
 
@@ -109,12 +119,12 @@ func ExecuteSample(sample Sample) error {
 	}
 
 	if err != nil {
-		return err
+		return err, ""
 	}
 
 	err = ExecuteModel(model, out)
 
-	return err
+	return err, out
 }
 
 func ExecuteModel(model WaveFunctionCollapse.WFCModel, outfile string) error {
